@@ -1,0 +1,29 @@
+[project]
+name = "slm-data-generation-service"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic-settings",
+    "python-multipart",
+    # --- Text Extraction ---
+    "pypdf",
+    "python-docx",
+    # --- LangChain and LLM Providers ---
+    "langchain",
+    "langchain-core",
+    "langchain-groq",
+    "langchain-openai",
+    "langchain-google-genai",
+    "langchain-huggingface",
+    # --- For local HF models ---
+    "transformers",
+    "torch",
+    "sentence-transformers",
+    # --- Text splitting ---
+    "langchain-text-splitters",
+    "docx>=0.2.4",
+]
