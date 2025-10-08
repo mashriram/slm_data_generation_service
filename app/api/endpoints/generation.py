@@ -2,7 +2,7 @@ import logging
 from typing import List
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Query
 
-from app.core.config import get_settings, Settings
+from app.core.config import get_settings, LLMProviderEnum
 from app.schemas.qa import QAItem, QAGenerationResponse
 from app.services.data_generator import QAGenerator
 from app.utils.exceptions import (
@@ -23,7 +23,7 @@ settings = get_settings()
     tags=["QA Generation"],
 )
 async def generate_qa(
-    llm_provider: Settings.LLMProviderEnum = Query(
+    llm_provider: LLMProviderEnum = Query(
         "groq", description="The LLM provider to use for generation."
     ),
     file: UploadFile = File(

@@ -8,7 +8,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_huggingface import HuggingFacePipeline
 from typing import List, Type
 
-from app.core.config import get_settings, Settings
+from app.core.config import get_settings, LLMProviderEnum
 from app.utils.exceptions import LLMProviderError
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ class QAList(BaseModel):
 class LLMProviderFactory:
     """Factory to create and configure LLM chains."""
 
-    def __init__(self, provider: Settings.LLMProviderEnum):
+    def __init__(self, provider: LLMProviderEnum):
         self.settings = get_settings()
         self.provider = provider
         self.parser = JsonOutputParser(pydantic_object=QAList)
