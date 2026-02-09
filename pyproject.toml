@@ -26,4 +26,15 @@ dependencies = [
     # --- Text splitting ---
     "langchain-text-splitters",
     "docx>=0.2.4",
+    "datasets",
+    "rich",
+    "typer",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "httpx",
+    "pytest-asyncio",
+    "pytest-mock"
 ]

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import random
+from typing import List
 
 from fastapi import UploadFile
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -23,8 +24,9 @@ class QAGenerator:
             chunk_size=self.settings.CHUNK_SIZE,
             chunk_overlap=self.settings.CHUNK_OVERLAP,
         )
-        self.llm_provider = LLMProviderFactory(provider).llm
-        self.llm_chain = LLMProviderFactory(provider).chain
+        llm_provider_factory = LLMProviderFactory(provider)
+        self.llm_chain = llm_provider_factory.chain
+        self.parser = llm_provider_factory.parser
 
     async def generate_from_file(self, file: UploadFile) -> List[QAItem]:
         """
@@ -95,7 +97,7 @@ class QAGenerator:
                 {
                     "context": chunk,
                     "num_questions": num_questions,
-                    "format_instructions": LLMProviderFactory.parser.get_format_instructions(),
+                    "format_instructions": self.parser.get_format_instructions(),
                 }
             )
             return response

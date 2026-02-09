@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic_settings import BaseSettings
 
+# Supported LLM Providers
+LLMProviderEnum = Literal["groq", "openai", "google", "huggingface"]
 
 class Settings(BaseSettings):
     """
@@ -12,9 +14,6 @@ class Settings(BaseSettings):
 
     APP_NAME: str = "SLM Data Generation Service"
     APP_VERSION: str = "1.0.0"
-
-    # Supported LLM Providers
-    LLMProviderEnum = Literal["groq", "openai", "google", "huggingface"]
 
     # API Keys - these should be set in the .env file
     GROQ_API_KEY: str | None = None

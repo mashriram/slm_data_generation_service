@@ -16,4 +16,4 @@ class DataGenerationError(Exception):
     """Custom exception for errors during the QA generation process."""
     def __init__(self, detail: str):
         self.detail = detail
-        super().__init__(self.detail)```
+        super().__init__(self.detail)
