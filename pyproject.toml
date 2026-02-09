@@ -1,7 +1,7 @@
 [project]
 name = "slm-data-generation-service"
 version = "0.1.0"
-description = "Add your description here"
+description = "A service to generate high-quality synthetic data for SLMs training and fine-tuning."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -9,20 +9,24 @@ dependencies = [
     "uvicorn[standard]",
     "pydantic-settings",
     "python-multipart",
+    "websockets",
+    "gradio",
     # --- Text Extraction ---
     "pypdf",
     "python-docx",
-    # --- LangChain and LLM Providers ---
-    "langchain",
-    "langchain-core",
+    # --- LangChain Ecosystem (Using version 1.2.9 as requested) ---
+    "langchain==1.2.9",
     "langchain-groq",
     "langchain-openai",
     "langchain-google-genai",
     "langchain-huggingface",
+    # --- RAG ---
+    "chromadb",
+    "sentence-transformers",
+    "tokenizers>=0.22.0",
     # --- For local HF models ---
     "transformers",
     "torch",
-    "sentence-transformers",
     # --- Text splitting ---
     "langchain-text-splitters",
     "docx>=0.2.4",

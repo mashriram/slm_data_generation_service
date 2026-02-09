@@ -1,17 +1,17 @@
 # app/main.py
 import logging
+import asyncio
+from typing import List
 
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from starlette.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
 from app.core.config import get_settings
+from app.core.logging_utils import configure_logging, log_queue
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
+configure_logging()
 
 settings = get_settings()
 
@@ -39,3 +39,20 @@ def read_root():
         "service": settings.APP_NAME,
         "version": settings.APP_VERSION,
     }
+
+
+@app.websocket("/ws/logs")
+async def websocket_logs(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            if log_queue:
+                # Send all pending logs
+                while log_queue:
+                    log_entry = log_queue.popleft()
+                    await websocket.send_text(log_entry)
+
+            # Efficiently wait before checking again
+            await asyncio.sleep(0.1)
+    except WebSocketDisconnect:
+        logging.info("WebSocket client disconnected")
