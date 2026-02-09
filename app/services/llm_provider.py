@@ -1,7 +1,8 @@
 import logging
+from typing import Optional
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
-from langchain_core.pydantic_v1 import BaseModel, Field
+from pydantic import BaseModel, Field
 from langchain_groq import ChatGroq
 from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -29,14 +30,18 @@ class QAList(BaseModel):
 class LLMProviderFactory:
     """Factory to create and configure LLM chains."""
 
-    def __init__(self, provider: LLMProviderEnum):
+    def __init__(self, provider: LLMProviderEnum, model_name: Optional[str] = None, temperature: float = 0.7):
         self.settings = get_settings()
         self.provider = provider
+        self.model_name = model_name
+        self.temperature = temperature
         self.parser = JsonOutputParser(pydantic_object=QAList)
+        # Note: self.chain is primarily for backward compatibility or simple use cases.
+        # AgentGenerator might use self.llm directly.
         self.prompt = self._create_prompt()
         self.llm = self._get_llm()
         self.chain = self.prompt | self.llm | self.parser
-        logger.info(f"Initialized LLM provider: {self.provider}")
+        logger.info(f"Initialized LLM provider: {self.provider} (Model: {self.model_name or 'default'})")
 
     def _create_prompt(self):
         """Creates the prompt template for QA generation."""
@@ -66,33 +71,33 @@ class LLMProviderFactory:
                 if not self.settings.GROQ_API_KEY:
                     raise LLMProviderError("GROQ_API_KEY is not set.")
                 return ChatGroq(
-                    temperature=0.7,
+                    temperature=self.temperature,
                     groq_api_key=self.settings.GROQ_API_KEY,
-                    model_name=self.settings.GROQ_MODEL_NAME,
+                    model_name=self.model_name or self.settings.GROQ_MODEL_NAME,
                 )
 
             elif self.provider == "openai":
                 if not self.settings.OPENAI_API_KEY:
                     raise LLMProviderError("OPENAI_API_KEY is not set.")
                 return ChatOpenAI(
-                    temperature=0.7,
+                    temperature=self.temperature,
                     openai_api_key=self.settings.OPENAI_API_KEY,
-                    model=self.settings.OPENAI_MODEL_NAME,
+                    model=self.model_name or self.settings.OPENAI_MODEL_NAME,
                 )
 
             elif self.provider == "google":
                 if not self.settings.GOOGLE_API_KEY:
                     raise LLMProviderError("GOOGLE_API_KEY is not set.")
                 return ChatGoogleGenerativeAI(
-                    temperature=0.7,
+                    temperature=self.temperature,
                     google_api_key=self.settings.GOOGLE_API_KEY,
-                    model=self.settings.GOOGLE_MODEL_NAME,
+                    model=self.model_name or self.settings.GOOGLE_MODEL_NAME,
                 )
 
             elif self.provider == "huggingface":
                 # Note: This runs the model locally. Requires `transformers` and `torch`.
                 return HuggingFacePipeline.from_model_id(
-                    model_id=self.settings.HUGGINGFACE_MODEL_NAME,
+                    model_id=self.model_name or self.settings.HUGGINGFACE_MODEL_NAME,
                     task="text2text-generation",
                     pipeline_kwargs={"max_new_tokens": 512},
                 )
