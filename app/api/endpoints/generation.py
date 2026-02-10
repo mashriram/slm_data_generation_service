@@ -1,10 +1,11 @@
 import logging
-from typing import List
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Query
 
-from app.core.config import get_settings, Settings
-from app.schemas.qa import QAItem, QAGenerationResponse
-from app.services.data_generator import QAGenerator
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
+
+from app.core.config import Settings
+from app.schemas.qa import QAGenerationResponse
+from app.services.aisheets_generator import AISheetsGenerator
+from app.services.text_extractor import TextExtractor
 from app.utils.exceptions import (
     DataGenerationError,
     FileExtractionError,
@@ -13,7 +14,6 @@ from app.utils.exceptions import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-settings = get_settings()
 
 
 @router.post(
@@ -31,25 +31,34 @@ async def generate_qa(
     ),
 ):
     """
-    This endpoint extracts text from a document and uses a powerful LLM to generate
-    a dataset of approximately 10,000 question-answer pairs.
+    This endpoint extracts text from a document and uses the `datasets-generation`
+    library to generate a high-quality dataset of question-answer pairs.
     """
     logger.info(
         f"Received request to generate QA from '{file.filename}' using '{llm_provider}'."
     )
     try:
-        generator = QAGenerator(provider=llm_provider)
-        qa_pairs = await generator.generate_from_file(file)
+        # 1. Extract text
+        full_text = await TextExtractor.extract(file)
 
-        response = QAGenerationResponse(generated_pairs=len(qa_pairs), data=qa_pairs)
-        return response
+        # 2. Initialize generator
+        generator = AISheetsGenerator(provider=llm_provider)
+
+        # 3. Generate dataset
+        qa_pairs = await generator.generate(full_text)
+
+        logger.info(
+            f"Successfully generated {len(qa_pairs)} QA pairs for '{file.filename}'."
+        )
+        return QAGenerationResponse(generated_pairs=len(qa_pairs), data=qa_pairs)
     except (FileExtractionError, DataGenerationError, LLMProviderError) as e:
         logger.error(f"Generation failed for '{file.filename}': {e.detail}")
-        raise HTTPException(status_code=400, detail=e.detail)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.detail)
     except Exception as e:
         logger.exception(
-            f"An unexpected error occurred while generating QA for '{file.filename}': {e}"
+            f"An unexpected internal error occurred while processing '{file.filename}': {e}"
         )
         raise HTTPException(
-            status_code=500, detail="An internal server error occurred."
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal server error occurred.",
         )

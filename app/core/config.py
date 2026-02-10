@@ -1,4 +1,3 @@
-# app/core/config.py
 from functools import lru_cache
 from typing import Literal
 
@@ -16,7 +15,7 @@ class Settings(BaseSettings):
     # Supported LLM Providers
     LLMProviderEnum = Literal["groq", "openai", "google", "huggingface"]
 
-    # API Keys - these should be set in the .env file
+    # API Keys (loaded from .env file)
     GROQ_API_KEY: str | None = None
     OPENAI_API_KEY: str | None = None
     GOOGLE_API_KEY: str | None = None
@@ -30,11 +29,11 @@ class Settings(BaseSettings):
 
     # Generation settings
     TARGET_QA_PAIRS: int = 10000
-    QA_BATCH_SIZE: int = 20  # Number of QAs to generate in one LLM call
+    QA_PER_CHUNK: int = 5  # Number of QAs to generate from each text chunk
 
-    # Text processing settings
-    CHUNK_SIZE: int = 4000
-    CHUNK_OVERLAP: int = 200
+    # Text processing settings for splitting documents
+    CHUNK_SIZE: int = 2048
+    CHUNK_OVERLAP: int = 128
 
     class Config:
         env_file = ".env"

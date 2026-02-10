@@ -22,6 +22,12 @@ dependencies = [
     # --- For local HF models ---
     "transformers",
     "torch",
+    "datasets",
+
+    "langchain-text-splitters",
+
+# LLM Provider Integrations
+
     "sentence-transformers",
     # --- Text splitting ---
     "langchain-text-splitters",

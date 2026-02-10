@@ -1,6 +1,6 @@
-# app/schemas/qa.py
-from pydantic import BaseModel, Field
 from typing import List
+
+from pydantic import BaseModel, Field
 
 
 class QAItem(BaseModel):
@@ -18,8 +18,8 @@ class QAItem(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "question": "What is the primary benefit of using LangChain?",
-                "answer": "LangChain's primary benefit is its ability to chain together different language model components, enabling the creation of more complex and powerful applications.",
+                "question": "What is the primary benefit of using the datasets-generation library?",
+                "answer": "The primary benefit is its ability to reliably generate large datasets by applying a generation function over a dataset, handling batching and retries automatically.",
             }
         }
 

@@ -1,4 +1,3 @@
-# app/main.py
 import logging
 
 from fastapi import FastAPI
@@ -12,18 +11,21 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
+logging.getLogger("datasets").setLevel(
+    logging.WARNING
+)  # Reduce noisy logs from datasets library
 
 settings = get_settings()
 
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    description="A service to generate Question-Answer datasets from documents using various LLM providers.",
+    description="A service to generate Question-Answer datasets from documents using various LLM providers and the aisheets library.",
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # In production, restrict this to specific domains
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -34,6 +36,7 @@ app.include_router(api_router, prefix="/api")
 
 @app.get("/", tags=["Health Check"])
 def read_root():
+    """Health check endpoint."""
     return {
         "status": "ok",
         "service": settings.APP_NAME,

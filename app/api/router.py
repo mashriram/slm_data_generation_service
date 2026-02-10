@@ -1,4 +1,3 @@
-# app/api/router.py
 from fastapi import APIRouter
 
 from app.api.endpoints import generation
