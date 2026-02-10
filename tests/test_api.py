@@ -1,31 +1,55 @@
-import pytest
 from fastapi.testclient import TestClient
 from app.main import app
+from unittest.mock import patch, AsyncMock
 
 client = TestClient(app)
 
-def test_generate_endpoint():
-    # Test generation with just prompt
+def test_models_endpoint():
+    response = client.get("/api/v1/models")
+    assert response.status_code == 200
+    data = response.json()
+    assert "providers" in data
+    assert "groq" in data["providers"]
+
+@patch("app.api.endpoints.generation.AgentGenerator")
+def test_generate_endpoint_mocked(MockAgentGenerator):
+    # Mock instance and generate method
+    mock_instance = MockAgentGenerator.return_value
+    mock_instance.generate = AsyncMock(return_value=[{"question": "Q", "answer": "A"}])
+
     response = client.post(
         "/api/v1/generate",
         data={
-            "prompt": "Generate 3 random trivia questions about space.",
+            "prompt": "Test prompt",
             "provider": "groq",
-            "count": 3
+            "count": 1
         }
     )
-    # Note: Groq might fail without API key, so we expect either success or 500/400.
-    # But for now, we just want to verify the endpoint is reachable and parses input.
-    # If the provider is not configured, it will raise an error.
 
-    print(f"Status: {response.status_code}")
-    print(f"Response: {response.json()}")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is True
+    assert data["generated_count"] == 1
+    assert data["data"][0]["question"] == "Q"
 
-    assert response.status_code in [200, 400, 500]
-    if response.status_code == 200:
-        data = response.json()
-        assert data["success"] is True
-        assert len(data["data"]) <= 3
+@patch("app.api.endpoints.generation.AgentGenerator")
+def test_generate_with_options(MockAgentGenerator):
+    mock_instance = MockAgentGenerator.return_value
+    mock_instance.generate = AsyncMock(return_value=[{"q": "1", "a": "1"}])
 
-if __name__ == "__main__":
-    test_generate_endpoint()
+    response = client.post(
+        "/api/v1/generate",
+        data={
+            "prompt": "Test",
+            "provider": "groq",
+            "conserve_tokens": True,
+            "rate_limit": 10,
+            "hf_repo_id": "test/repo",
+            "hf_token": "secret"
+        }
+    )
+    assert response.status_code == 200
+    # verify mock called with correct args
+    args, kwargs = mock_instance.generate.call_args
+    assert kwargs["conserve_tokens"] is True
+    assert kwargs["rate_limit"] == 10

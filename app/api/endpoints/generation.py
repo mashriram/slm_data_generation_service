@@ -1,12 +1,13 @@
 # app/api/endpoints/generation.py
 import logging
 import json
-from typing import List, Optional
+from typing import List, Optional, Dict
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException, Query, Body
 from pydantic import BaseModel
 
 from app.core.config import get_settings, LLMProviderEnum
 from app.services.agent_generator import AgentGenerator
+from app.services.hf_service import HuggingFaceService
 from app.utils.exceptions import DataGenerationError, LLMProviderError
 
 router = APIRouter()
@@ -17,6 +18,7 @@ class GenerationResponse(BaseModel):
     success: bool
     generated_count: int
     data: List[dict]
+    message: Optional[str] = None
 
 @router.post(
     "/generate",
@@ -32,17 +34,21 @@ async def generate_data(
     model: Optional[str] = Form(None, description="Specific model name to use."),
     temperature: float = Form(0.7, description="Temperature for generation (0.0 to 1.0)."),
     count: int = Form(10, description="Number of items to generate."),
-    agentic: bool = Form(False, description="Enable agentic behavior (experimental)."),
+    agentic: bool = Form(False, description="Enable agentic behavior (uses tools/RAG)."),
+    use_rag: bool = Form(False, description="Enable RAG for document querying (requires agentic mode)."),
+    conserve_tokens: bool = Form(False, description="Optimize context to conserve tokens."),
+    rate_limit: int = Form(0, description="Rate limit (requests per minute). 0 for unlimited."),
     mcp_servers: Optional[str] = Form(None, description="JSON string list of MCP server URLs (optional)."),
+    # HF Options
+    hf_repo_id: Optional[str] = Form(None, description="Hugging Face Repo ID to push to (e.g., 'username/dataset')."),
+    hf_token: Optional[str] = Form(None, description="Hugging Face Write Token."),
+    hf_private: bool = Form(False, description="Make HF dataset private."),
+    hf_append: bool = Form(False, description="Append to existing HF dataset instead of overwrite.")
 ):
     """
     Unified endpoint to generate synthetic data.
-    - **Prompt**: Instructions for what to generate.
-    - **Files**: Context documents.
-    - **Demo File**: Few-shot examples.
-    - **Agentic**: If true, uses an agent to determine execution path (currently experimental).
     """
-    logger.info(f"Received generation request. Provider: {provider}, Model: {model}, Count: {count}, Agentic: {agentic}")
+    logger.info(f"Received generation request. Provider: {provider}, Rate Limit: {rate_limit}")
 
     try:
         # Parse MCP servers if provided
@@ -61,7 +67,6 @@ async def generate_data(
             temperature=temperature
         )
 
-        # Ensure files list is not None (FastAPI might pass None if no files)
         files = files or []
 
         generated_data = await generator.generate(
@@ -70,13 +75,36 @@ async def generate_data(
             demo_file=demo_file,
             count=count,
             agentic=agentic,
-            mcp_servers=parsed_mcp_servers
+            mcp_servers=parsed_mcp_servers,
+            use_rag=use_rag,
+            conserve_tokens=conserve_tokens,
+            rate_limit=rate_limit
         )
+
+        message = "Data generated successfully."
+
+        # Handle HF Push
+        if hf_repo_id and hf_token:
+            if generated_data:
+                try:
+                    hf_msg = HuggingFaceService.push_dataset(
+                        data=generated_data,
+                        repo_id=hf_repo_id,
+                        token=hf_token,
+                        private=hf_private,
+                        append=hf_append
+                    )
+                    message += f" {hf_msg}"
+                except Exception as e:
+                    message += f" Warning: HF Push failed: {str(e)}"
+            else:
+                message += " Warning: No data generated to push."
 
         return GenerationResponse(
             success=True,
             generated_count=len(generated_data),
-            data=generated_data
+            data=generated_data,
+            message=message
         )
 
     except (LLMProviderError, DataGenerationError) as e:
@@ -84,8 +112,26 @@ async def generate_data(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.exception(f"Unexpected generation failure: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
+class DatasetModifyRequest(BaseModel):
+    repo_id: str
+    token: str
+    data: List[Dict]
+    operation: str = "append_rows" # or "add_column"
+
+@router.post("/dataset/modify", summary="Modify Existing HF Dataset", tags=["Dataset"])
+async def modify_dataset(request: DatasetModifyRequest):
+    try:
+        msg = HuggingFaceService.modify_dataset(
+            repo_id=request.repo_id,
+            new_data=request.data,
+            token=request.token,
+            operation=request.operation
+        )
+        return {"success": True, "message": msg}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/models", summary="List Available Models", tags=["Info"])
 def list_models():

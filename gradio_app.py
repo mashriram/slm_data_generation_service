@@ -40,7 +40,16 @@ def generate_data(
     temperature,
     count,
     agentic,
-    mcp_servers
+    use_rag,
+    mcp_servers,
+    # Optimization
+    conserve_tokens,
+    rate_limit,
+    # HF
+    hf_repo,
+    hf_token,
+    hf_private,
+    hf_append
 ):
     url = f"{API_URL}/generate"
 
@@ -51,7 +60,14 @@ def generate_data(
         "temperature": float(temperature),
         "count": int(count),
         "agentic": agentic,
-        "mcp_servers": mcp_servers if mcp_servers else None
+        "use_rag": use_rag,
+        "mcp_servers": mcp_servers if mcp_servers else None,
+        "conserve_tokens": conserve_tokens,
+        "rate_limit": int(rate_limit) if rate_limit else 0,
+        "hf_repo_id": hf_repo if hf_repo else None,
+        "hf_token": hf_token if hf_token else None,
+        "hf_private": hf_private,
+        "hf_append": hf_append
     }
 
     if model:
@@ -60,7 +76,6 @@ def generate_data(
     files_payload = []
     if files:
         for f in files:
-            # Gradio passes file paths
             files_payload.append(("files", (f.split("/")[-1], open(f, "rb"), "application/octet-stream")))
 
     if demo_file:
@@ -68,95 +83,130 @@ def generate_data(
 
     try:
         response = requests.post(url, data=data, files=files_payload)
-        response.raise_for_status()
-        result = response.json()
+        # response.raise_for_status() # Let's handle status codes manually for better error messages
 
-        if result.get("success"):
+        if response.status_code == 200:
+            result = response.json()
             df = pd.DataFrame(result.get("data", []))
             json_output = json.dumps(result.get("data", []), indent=2)
-            return df, json_output, "Success"
+            msg = result.get("message", "Success")
+            return df, json_output, msg
         else:
-            return pd.DataFrame(), "{}", f"Error: {result}"
-
-    except requests.exceptions.RequestException as e:
-        error_detail = "Unknown error"
-        if e.response is not None:
             try:
-                error_detail = e.response.json().get("detail", e.response.text)
+                detail = response.json().get("detail", response.text)
             except:
-                error_detail = e.response.text
-        return pd.DataFrame(), "{}", f"Failed: {error_detail}"
+                detail = response.text
+            return pd.DataFrame(), "{}", f"Error {response.status_code}: {detail}"
+
     except Exception as e:
          return pd.DataFrame(), "{}", f"Unexpected Error: {e}"
+
+def modify_hf_dataset(repo_id, token, data_json, operation):
+    url = f"{API_URL}/dataset/modify"
+    try:
+        payload = {
+            "repo_id": repo_id,
+            "token": token,
+            "data": json.loads(data_json),
+            "operation": operation
+        }
+        response = requests.post(url, json=payload)
+        if response.status_code == 200:
+            return f"Success: {response.json().get('message')}"
+        else:
+            return f"Error: {response.text}"
+    except Exception as e:
+        return f"Failed: {e}"
 
 # --- UI Layout ---
 
 with gr.Blocks(title="SLM Data Generator") as demo:
     gr.Markdown("# 🚀 Synthetic Data Generation Service")
-    gr.Markdown("Generate high-quality datasets for SLM training/finetuning using various LLM providers.")
+    gr.Markdown("Generate, Optimize, and Export datasets for SLM training.")
 
-    with gr.Row():
-        with gr.Column(scale=1):
-            gr.Markdown("### ⚙️ Configuration")
-            provider_dropdown = gr.Dropdown(choices=PROVIDERS, value="groq", label="LLM Provider")
-            model_input = gr.Textbox(label="Model Name (Optional)", placeholder="e.g. llama3-8b-8192")
-            temp_slider = gr.Slider(minimum=0.0, maximum=1.0, value=0.7, step=0.1, label="Temperature")
-            count_slider = gr.Slider(minimum=1, maximum=100, value=10, step=1, label="Number of Pairs")
-            agentic_checkbox = gr.Checkbox(label="Enable Agentic Mode (Experimental)", value=False)
-            mcp_input = gr.Textbox(label="MCP Servers (JSON List)", placeholder='["http://server1", "http://server2"]', lines=2)
+    with gr.Tabs():
+        with gr.TabItem("Generate Data"):
+            with gr.Row():
+                with gr.Column(scale=1):
+                    gr.Markdown("### ⚙️ Configuration")
+                    provider_dropdown = gr.Dropdown(choices=PROVIDERS, value="groq", label="LLM Provider")
+                    model_input = gr.Textbox(label="Model Name (Optional)", placeholder="e.g. llama3-8b-8192")
+                    temp_slider = gr.Slider(minimum=0.0, maximum=1.0, value=0.7, step=0.1, label="Temperature")
+                    count_slider = gr.Slider(minimum=1, maximum=100, value=10, step=1, label="Number of Pairs")
 
-            gr.Markdown("### 📄 Source Content")
-            files_upload = gr.File(label="Upload Context Files (PDF, DOCX, CSV)", file_count="multiple")
-            demo_upload = gr.File(label="Upload Few-Shot Demo (CSV)", file_count="single")
+                    with gr.Accordion("Advanced & Agentic", open=False):
+                        with gr.Row():
+                            agentic_checkbox = gr.Checkbox(label="Agentic Mode", value=False)
+                            rag_checkbox = gr.Checkbox(label="Use RAG", value=False)
+                        mcp_input = gr.Textbox(label="MCP Servers (JSON List)", placeholder='["http://server1"]', lines=1)
 
-            generate_btn = gr.Button("✨ Generate Data", variant="primary", size="lg")
+                    with gr.Accordion("Optimization (Context & Rate)", open=True):
+                        conserve_chk = gr.Checkbox(label="Conserve Tokens (Truncate Context)", value=False)
+                        rate_slider = gr.Slider(minimum=0, maximum=60, value=0, step=1, label="Rate Limit (req/min) - 0=Unlimited")
 
-        with gr.Column(scale=2):
-            gr.Markdown("### 📝 Prompt")
-            prompt_input = gr.Textbox(
-                label="Instructions",
-                placeholder="Describe what kind of data you want to generate...",
-                lines=4,
-                value="Generate Q&A pairs about the provided documents."
+                    with gr.Accordion("Hugging Face Export", open=True):
+                        hf_repo_input = gr.Textbox(label="Repo ID (e.g. user/dataset)", placeholder="username/my-dataset")
+                        hf_token_input = gr.Textbox(label="Write Token", type="password")
+                        with gr.Row():
+                            hf_private_chk = gr.Checkbox(label="Private", value=False)
+                            hf_append_chk = gr.Checkbox(label="Append to existing", value=False)
+
+                    gr.Markdown("### 📄 Source Content")
+                    files_upload = gr.File(label="Upload Context Files", file_count="multiple")
+                    demo_upload = gr.File(label="Upload Few-Shot Demo (CSV)", file_count="single")
+
+                    generate_btn = gr.Button("✨ Generate & Export", variant="primary", size="lg")
+
+                with gr.Column(scale=2):
+                    gr.Markdown("### 📝 Prompt")
+                    prompt_input = gr.Textbox(
+                        label="Instructions",
+                        placeholder="Describe what kind of data you want to generate...",
+                        lines=4,
+                        value="Generate Q&A pairs about the provided documents."
+                    )
+
+                    gr.Markdown("### 📊 Results")
+                    status_output = gr.Textbox(label="Status", interactive=False)
+
+                    with gr.Tabs():
+                        with gr.TabItem("Data Table"):
+                            dataframe_output = gr.Dataframe(label="Generated Data")
+                        with gr.TabItem("JSON View"):
+                            json_output = gr.Code(language="json", label="Raw JSON")
+
+            with gr.Row():
+                with gr.Column():
+                    gr.Markdown("### 📡 Live Server Logs")
+                    logs_output = gr.Textbox(label="Server Logs", lines=10, max_lines=15, interactive=False, autoscroll=True)
+                    start_logs_btn = gr.Button("Connect to Logs")
+                    start_logs_btn.click(stream_logs, inputs=None, outputs=logs_output)
+
+            generate_btn.click(
+                fn=generate_data,
+                inputs=[
+                    prompt_input, files_upload, demo_upload, provider_dropdown, model_input, temp_slider, count_slider,
+                    agentic_checkbox, rag_checkbox, mcp_input,
+                    conserve_chk, rate_slider,
+                    hf_repo_input, hf_token_input, hf_private_chk, hf_append_chk
+                ],
+                outputs=[dataframe_output, json_output, status_output]
             )
 
-            gr.Markdown("### 📊 Results")
-            status_output = gr.Textbox(label="Status", interactive=False)
+        with gr.TabItem("Modify Dataset"):
+            gr.Markdown("### 🛠 Modify Existing Hugging Face Dataset")
+            mod_repo = gr.Textbox(label="Repo ID")
+            mod_token = gr.Textbox(label="Write Token", type="password")
+            mod_op = gr.Radio(["append_rows", "add_column"], label="Operation", value="append_rows")
+            mod_data = gr.Textbox(label="New Data (JSON List of Dicts)", lines=10, placeholder='[{"col1": "val1"}, ...]')
+            mod_btn = gr.Button("Apply Modification")
+            mod_status = gr.Textbox(label="Result")
 
-            with gr.Tabs():
-                with gr.TabItem("Data Table"):
-                    dataframe_output = gr.Dataframe(label="Generated Data")
-                with gr.TabItem("JSON View"):
-                    json_output = gr.Code(language="json", label="Raw JSON")
-
-    with gr.Row():
-        with gr.Column():
-            gr.Markdown("### 📡 Live Server Logs")
-            logs_output = gr.Textbox(label="Server Logs", lines=10, max_lines=15, interactive=False, autoscroll=True)
-
-            # Streaming logs logic
-            # Gradio doesn't support async generators directly in standard events easily without simple tricks.
-            # But we can use a button to start streaming or use `demo.load`.
-            # A common pattern is using a generator function.
-
-            start_logs_btn = gr.Button("Connect to Logs")
-            start_logs_btn.click(stream_logs, inputs=None, outputs=logs_output)
-
-    generate_btn.click(
-        fn=generate_data,
-        inputs=[
-            prompt_input,
-            files_upload,
-            demo_upload,
-            provider_dropdown,
-            model_input,
-            temp_slider,
-            count_slider,
-            agentic_checkbox,
-            mcp_input
-        ],
-        outputs=[dataframe_output, json_output, status_output]
-    )
+            mod_btn.click(
+                fn=modify_hf_dataset,
+                inputs=[mod_repo, mod_token, mod_data, mod_op],
+                outputs=[mod_status]
+            )
 
 if __name__ == "__main__":
     demo.queue().launch(server_name="0.0.0.0", server_port=7860, theme=gr.themes.Soft())
