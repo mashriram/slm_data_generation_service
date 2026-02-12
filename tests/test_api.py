@@ -22,7 +22,8 @@ def test_generate_endpoint_mocked(MockAgentGenerator):
         data={
             "prompt": "Test prompt",
             "provider": "groq",
-            "count": 1
+            "count": 1,
+            "api_key": "dummy_key"
         }
     )
 
@@ -45,7 +46,9 @@ def test_generate_with_options(MockAgentGenerator):
             "conserve_tokens": True,
             "rate_limit": 10,
             "hf_repo_id": "test/repo",
-            "hf_token": "secret"
+            "hf_token": "secret",
+            "hf_config": "default",
+            "hf_split": "test"
         }
     )
     assert response.status_code == 200

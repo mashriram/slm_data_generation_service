@@ -31,12 +31,42 @@ async def stream_logs():
     except Exception as e:
         yield f"Connection error: {e}\n"
 
+def get_repo_info(repo_id, token):
+    if not repo_id:
+        return gr.update(choices=[]), gr.update(choices=[])
+    try:
+        headers = {}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        response = requests.get(f"{API_URL}/dataset/info", params={"repo_id": repo_id, "token": token})
+        if response.status_code == 200:
+            info = response.json()
+            configs = info.get("configs", ["default"])
+            splits_map = info.get("splits", {})
+
+            # If only default config, update splits
+            splits = splits_map.get("default", ["train", "test", "validation"])
+            return gr.update(choices=configs, value=configs[0] if configs else None), gr.update(choices=splits, value=splits[0] if splits else None)
+        else:
+            return gr.update(choices=["default"]), gr.update(choices=["train"])
+    except:
+        return gr.update(choices=["default"]), gr.update(choices=["train"])
+
+def update_splits(repo_id, config_name, token):
+    # This might require another call or logic if splits depend on config
+    # We can try to fetch info again or cache it.
+    # Simplest is just re-fetch info with config logic if needed, but get_dataset_info returns all.
+    # But get_dataset_info logic I wrote returns all if possible.
+    # Let's assume fetch_info handles it.
+    pass
+
 def generate_data(
     prompt,
     files,
     demo_file,
     provider,
     model,
+    api_key,
     temperature,
     count,
     agentic,
@@ -49,7 +79,9 @@ def generate_data(
     hf_repo,
     hf_token,
     hf_private,
-    hf_append
+    hf_append,
+    hf_config,
+    hf_split
 ):
     url = f"{API_URL}/generate"
 
@@ -67,11 +99,15 @@ def generate_data(
         "hf_repo_id": hf_repo if hf_repo else None,
         "hf_token": hf_token if hf_token else None,
         "hf_private": hf_private,
-        "hf_append": hf_append
+        "hf_append": hf_append,
+        "hf_config": hf_config,
+        "hf_split": hf_split
     }
 
     if model:
         data["model"] = model
+    if api_key:
+        data["api_key"] = api_key
 
     files_payload = []
     if files:
@@ -83,7 +119,6 @@ def generate_data(
 
     try:
         response = requests.post(url, data=data, files=files_payload)
-        # response.raise_for_status() # Let's handle status codes manually for better error messages
 
         if response.status_code == 200:
             result = response.json()
@@ -101,15 +136,26 @@ def generate_data(
     except Exception as e:
          return pd.DataFrame(), "{}", f"Unexpected Error: {e}"
 
-def modify_hf_dataset(repo_id, token, data_json, operation):
+def modify_hf_dataset(repo_id, token, config, split, data_json, operation, gen_mode, gen_instruction, gen_new_col, gen_rows, provider, api_key):
     url = f"{API_URL}/dataset/modify"
     try:
         payload = {
             "repo_id": repo_id,
             "token": token,
-            "data": json.loads(data_json),
-            "operation": operation
+            "operation": operation,
+            "config_name": config,
+            "split": split,
+            "generative_mode": gen_mode,
+            "instruction": gen_instruction,
+            "new_column_name": gen_new_col,
+            "num_rows": int(gen_rows) if gen_rows else 10,
+            "provider": provider,
+            "api_key": api_key
         }
+
+        if not gen_mode:
+             payload["data"] = json.loads(data_json)
+
         response = requests.post(url, json=payload)
         if response.status_code == 200:
             return f"Success: {response.json().get('message')}"
@@ -129,7 +175,10 @@ with gr.Blocks(title="SLM Data Generator") as demo:
             with gr.Row():
                 with gr.Column(scale=1):
                     gr.Markdown("### ⚙️ Configuration")
-                    provider_dropdown = gr.Dropdown(choices=PROVIDERS, value="groq", label="LLM Provider")
+                    with gr.Row():
+                        provider_dropdown = gr.Dropdown(choices=PROVIDERS, value="groq", label="LLM Provider")
+                        api_key_input = gr.Textbox(label="Provider API Key", type="password", placeholder="Overrides env var")
+
                     model_input = gr.Textbox(label="Model Name (Optional)", placeholder="e.g. llama3-8b-8192")
                     temp_slider = gr.Slider(minimum=0.0, maximum=1.0, value=0.7, step=0.1, label="Temperature")
                     count_slider = gr.Slider(minimum=1, maximum=100, value=10, step=1, label="Number of Pairs")
@@ -140,16 +189,23 @@ with gr.Blocks(title="SLM Data Generator") as demo:
                             rag_checkbox = gr.Checkbox(label="Use RAG", value=False)
                         mcp_input = gr.Textbox(label="MCP Servers (JSON List)", placeholder='["http://server1"]', lines=1)
 
-                    with gr.Accordion("Optimization (Context & Rate)", open=True):
-                        conserve_chk = gr.Checkbox(label="Conserve Tokens (Truncate Context)", value=False)
-                        rate_slider = gr.Slider(minimum=0, maximum=60, value=0, step=1, label="Rate Limit (req/min) - 0=Unlimited")
+                    with gr.Accordion("Optimization", open=False):
+                        conserve_chk = gr.Checkbox(label="Conserve Tokens", value=False)
+                        rate_slider = gr.Slider(minimum=0, maximum=60, value=0, step=1, label="Rate Limit (req/min)")
 
                     with gr.Accordion("Hugging Face Export", open=True):
-                        hf_repo_input = gr.Textbox(label="Repo ID (e.g. user/dataset)", placeholder="username/my-dataset")
+                        hf_repo_input = gr.Textbox(label="Repo ID", placeholder="username/dataset")
                         hf_token_input = gr.Textbox(label="Write Token", type="password")
                         with gr.Row():
+                            hf_fetch_btn = gr.Button("Load Configs")
+                        with gr.Row():
+                            hf_config_dropdown = gr.Dropdown(label="Config Name", allow_custom_value=True)
+                            hf_split_dropdown = gr.Dropdown(label="Split", value="train", allow_custom_value=True)
+                        with gr.Row():
                             hf_private_chk = gr.Checkbox(label="Private", value=False)
-                            hf_append_chk = gr.Checkbox(label="Append to existing", value=False)
+                            hf_append_chk = gr.Checkbox(label="Append", value=False)
+
+                    hf_fetch_btn.click(get_repo_info, inputs=[hf_repo_input, hf_token_input], outputs=[hf_config_dropdown, hf_split_dropdown])
 
                     gr.Markdown("### 📄 Source Content")
                     files_upload = gr.File(label="Upload Context Files", file_count="multiple")
@@ -185,26 +241,48 @@ with gr.Blocks(title="SLM Data Generator") as demo:
             generate_btn.click(
                 fn=generate_data,
                 inputs=[
-                    prompt_input, files_upload, demo_upload, provider_dropdown, model_input, temp_slider, count_slider,
+                    prompt_input, files_upload, demo_upload, provider_dropdown, model_input, api_key_input,
+                    temp_slider, count_slider,
                     agentic_checkbox, rag_checkbox, mcp_input,
                     conserve_chk, rate_slider,
-                    hf_repo_input, hf_token_input, hf_private_chk, hf_append_chk
+                    hf_repo_input, hf_token_input, hf_private_chk, hf_append_chk, hf_config_dropdown, hf_split_dropdown
                 ],
                 outputs=[dataframe_output, json_output, status_output]
             )
 
         with gr.TabItem("Modify Dataset"):
             gr.Markdown("### 🛠 Modify Existing Hugging Face Dataset")
-            mod_repo = gr.Textbox(label="Repo ID")
-            mod_token = gr.Textbox(label="Write Token", type="password")
+            with gr.Row():
+                mod_repo = gr.Textbox(label="Repo ID")
+                mod_token = gr.Textbox(label="Write Token", type="password")
+
+            mod_fetch_btn = gr.Button("Load Dataset Info")
+            with gr.Row():
+                mod_config = gr.Dropdown(label="Config", allow_custom_value=True)
+                mod_split = gr.Dropdown(label="Split", value="train", allow_custom_value=True)
+
+            mod_fetch_btn.click(get_repo_info, inputs=[mod_repo, mod_token], outputs=[mod_config, mod_split])
+
             mod_op = gr.Radio(["append_rows", "add_column"], label="Operation", value="append_rows")
-            mod_data = gr.Textbox(label="New Data (JSON List of Dicts)", lines=10, placeholder='[{"col1": "val1"}, ...]')
+
+            with gr.Accordion("Generative Options", open=True):
+                mod_gen_mode = gr.Checkbox(label="Use LLM Generation", value=False)
+                with gr.Row():
+                    mod_provider = gr.Dropdown(choices=PROVIDERS, value="groq", label="Provider")
+                    mod_api_key = gr.Textbox(label="API Key", type="password")
+                mod_instruction = gr.Textbox(label="Instruction (Prompt)", placeholder="Description of new column OR instruction for new rows")
+                with gr.Row():
+                    mod_new_col = gr.Textbox(label="New Column Name (for add_column)")
+                    mod_rows = gr.Number(label="Number of Rows (for append_rows)", value=10)
+
+            mod_data = gr.Textbox(label="Manual Data (JSON List of Dicts) - Only if NOT Generative", lines=5)
+
             mod_btn = gr.Button("Apply Modification")
             mod_status = gr.Textbox(label="Result")
 
             mod_btn.click(
                 fn=modify_hf_dataset,
-                inputs=[mod_repo, mod_token, mod_data, mod_op],
+                inputs=[mod_repo, mod_token, mod_config, mod_split, mod_data, mod_op, mod_gen_mode, mod_instruction, mod_new_col, mod_rows, mod_provider, mod_api_key],
                 outputs=[mod_status]
             )
 

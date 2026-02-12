@@ -30,11 +30,12 @@ class QAList(BaseModel):
 class LLMProviderFactory:
     """Factory to create and configure LLM chains."""
 
-    def __init__(self, provider: LLMProviderEnum, model_name: Optional[str] = None, temperature: float = 0.7):
+    def __init__(self, provider: LLMProviderEnum, model_name: Optional[str] = None, temperature: float = 0.7, api_key: Optional[str] = None):
         self.settings = get_settings()
         self.provider = provider
         self.model_name = model_name
         self.temperature = temperature
+        self.api_key = api_key
         self.parser = JsonOutputParser(pydantic_object=QAList)
         # Note: self.chain is primarily for backward compatibility or simple use cases.
         # AgentGenerator might use self.llm directly.
@@ -68,34 +69,38 @@ class LLMProviderFactory:
         """Selects and configures the appropriate LLM based on the provider."""
         try:
             if self.provider == "groq":
-                if not self.settings.GROQ_API_KEY:
+                key = self.api_key or self.settings.GROQ_API_KEY
+                if not key:
                     raise LLMProviderError("GROQ_API_KEY is not set.")
                 return ChatGroq(
                     temperature=self.temperature,
-                    groq_api_key=self.settings.GROQ_API_KEY,
+                    groq_api_key=key,
                     model_name=self.model_name or self.settings.GROQ_MODEL_NAME,
                 )
 
             elif self.provider == "openai":
-                if not self.settings.OPENAI_API_KEY:
+                key = self.api_key or self.settings.OPENAI_API_KEY
+                if not key:
                     raise LLMProviderError("OPENAI_API_KEY is not set.")
                 return ChatOpenAI(
                     temperature=self.temperature,
-                    openai_api_key=self.settings.OPENAI_API_KEY,
+                    openai_api_key=key,
                     model=self.model_name or self.settings.OPENAI_MODEL_NAME,
                 )
 
             elif self.provider == "google":
-                if not self.settings.GOOGLE_API_KEY:
+                key = self.api_key or self.settings.GOOGLE_API_KEY
+                if not key:
                     raise LLMProviderError("GOOGLE_API_KEY is not set.")
                 return ChatGoogleGenerativeAI(
                     temperature=self.temperature,
-                    google_api_key=self.settings.GOOGLE_API_KEY,
+                    google_api_key=key,
                     model=self.model_name or self.settings.GOOGLE_MODEL_NAME,
                 )
 
             elif self.provider == "huggingface":
                 # Note: This runs the model locally. Requires `transformers` and `torch`.
+                # API Token might be used for login if needed, but Pipeline usually loads locally.
                 return HuggingFacePipeline.from_model_id(
                     model_id=self.model_name or self.settings.HUGGINGFACE_MODEL_NAME,
                     task="text2text-generation",

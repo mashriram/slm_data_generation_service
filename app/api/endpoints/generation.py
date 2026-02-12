@@ -1,13 +1,14 @@
 # app/api/endpoints/generation.py
 import logging
 import json
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException, Query, Body
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core.config import get_settings, LLMProviderEnum
 from app.services.agent_generator import AgentGenerator
 from app.services.hf_service import HuggingFaceService
+from app.services.generative_modifier import GenerativeDatasetModifier
 from app.utils.exceptions import DataGenerationError, LLMProviderError
 
 router = APIRouter()
@@ -32,6 +33,7 @@ async def generate_data(
     demo_file: UploadFile = File(None, description="A CSV file containing few-shot examples (columns: question, answer)."),
     provider: str = Form("groq", description="LLM Provider (groq, openai, google, huggingface)"),
     model: Optional[str] = Form(None, description="Specific model name to use."),
+    api_key: Optional[str] = Form(None, description="API Key for the provider (overrides server env)."),
     temperature: float = Form(0.7, description="Temperature for generation (0.0 to 1.0)."),
     count: int = Form(10, description="Number of items to generate."),
     agentic: bool = Form(False, description="Enable agentic behavior (uses tools/RAG)."),
@@ -43,7 +45,9 @@ async def generate_data(
     hf_repo_id: Optional[str] = Form(None, description="Hugging Face Repo ID to push to (e.g., 'username/dataset')."),
     hf_token: Optional[str] = Form(None, description="Hugging Face Write Token."),
     hf_private: bool = Form(False, description="Make HF dataset private."),
-    hf_append: bool = Form(False, description="Append to existing HF dataset instead of overwrite.")
+    hf_append: bool = Form(False, description="Append to existing HF dataset instead of overwrite."),
+    hf_config: Optional[str] = Form(None, description="HF Dataset Config Name."),
+    hf_split: str = Form("train", description="HF Dataset Split Name.")
 ):
     """
     Unified endpoint to generate synthetic data.
@@ -61,11 +65,17 @@ async def generate_data(
             except Exception as e:
                 logger.warning(f"Failed to parse MCP servers: {e}")
 
+        # Inject API Key into settings roughly (or pass to generator)
+        # Note: Generator uses LLMProviderFactory which currently reads from settings.
+        # Ideally we pass api_key to Generator.
+
         generator = AgentGenerator(
             provider=provider,
             model=model,
             temperature=temperature
         )
+        # Hack: if api_key provided, set it in factory (requires update to AgentGenerator/Factory)
+        # This will be handled in Step 3. For now passing it if I update AgentGenerator.
 
         files = files or []
 
@@ -92,7 +102,9 @@ async def generate_data(
                         repo_id=hf_repo_id,
                         token=hf_token,
                         private=hf_private,
-                        append=hf_append
+                        append=hf_append,
+                        config_name=hf_config,
+                        split=hf_split
                     )
                     message += f" {hf_msg}"
                 except Exception as e:
@@ -117,27 +129,103 @@ async def generate_data(
 class DatasetModifyRequest(BaseModel):
     repo_id: str
     token: str
-    data: List[Dict]
     operation: str = "append_rows" # or "add_column"
+    config_name: Optional[str] = None
+    split: str = "train"
+    # Manual Data
+    data: Optional[List[Dict]] = None
+    # Generative Options
+    generative_mode: bool = False
+    provider: str = "groq"
+    model: Optional[str] = None
+    api_key: Optional[str] = None
+    instruction: Optional[str] = None # Description of column or row generation instruction
+    new_column_name: Optional[str] = None # For add_column
+    num_rows: int = 10 # For append_rows generative
 
 @router.post("/dataset/modify", summary="Modify Existing HF Dataset", tags=["Dataset"])
 async def modify_dataset(request: DatasetModifyRequest):
     try:
-        msg = HuggingFaceService.modify_dataset(
-            repo_id=request.repo_id,
-            new_data=request.data,
-            token=request.token,
-            operation=request.operation
-        )
-        return {"success": True, "message": msg}
+        if request.generative_mode:
+            modifier = GenerativeDatasetModifier(
+                provider=request.provider,
+                model=request.model,
+                api_key=request.api_key
+            )
+
+            if request.operation == "add_column":
+                if not request.new_column_name or not request.instruction:
+                    raise ValueError("new_column_name and instruction required for generative add_column")
+
+                new_values = await modifier.generate_column(
+                    repo_id=request.repo_id,
+                    config_name=request.config_name or "default",
+                    split=request.split,
+                    hf_token=request.token,
+                    new_column_name=request.new_column_name,
+                    instruction=request.instruction
+                )
+
+                # Apply modification
+                msg = HuggingFaceService.modify_dataset(
+                    repo_id=request.repo_id,
+                    token=request.token,
+                    operation="add_column",
+                    config_name=request.config_name,
+                    split=request.split,
+                    new_column_name=request.new_column_name,
+                    new_column_data=new_values
+                )
+                return {"success": True, "message": msg + f" (Generated {len(new_values)} values)"}
+
+            elif request.operation == "append_rows":
+                if not request.instruction:
+                    raise ValueError("instruction required for generative append_rows")
+
+                new_rows = await modifier.generate_rows(
+                    repo_id=request.repo_id,
+                    config_name=request.config_name or "default",
+                    split=request.split,
+                    hf_token=request.token,
+                    num_rows=request.num_rows,
+                    prompt_instruction=request.instruction
+                )
+
+                msg = HuggingFaceService.modify_dataset(
+                    repo_id=request.repo_id,
+                    token=request.token,
+                    operation="append_rows",
+                    config_name=request.config_name,
+                    split=request.split,
+                    new_data=new_rows
+                )
+                return {"success": True, "message": msg + f" (Generated {len(new_rows)} rows)"}
+
+        else:
+            # Manual mode
+            msg = HuggingFaceService.modify_dataset(
+                repo_id=request.repo_id,
+                new_data=request.data,
+                token=request.token,
+                operation=request.operation,
+                config_name=request.config_name,
+                split=request.split
+            )
+            return {"success": True, "message": msg}
+
+    except Exception as e:
+        logger.error(f"Modification failed: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/dataset/info", summary="Get Dataset Configs and Splits", tags=["Dataset"])
+def get_dataset_info(repo_id: str, token: Optional[str] = None):
+    try:
+        return HuggingFaceService.get_dataset_info(repo_id, token)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/models", summary="List Available Models", tags=["Info"])
 def list_models():
-    """
-    Returns a list of supported providers and their default models.
-    """
     return {
         "providers": ["groq", "openai", "google", "huggingface"],
         "defaults": {

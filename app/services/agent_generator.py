@@ -34,12 +34,12 @@ class AgentGenerator:
     Unified service for generating data using either a structured pipeline or an agentic approach.
     """
 
-    def __init__(self, provider: str, model: Optional[str] = None, temperature: float = 0.7):
+    def __init__(self, provider: str, model: Optional[str] = None, temperature: float = 0.7, api_key: Optional[str] = None):
         self.settings = get_settings()
         self.provider = provider
 
         # Initialize LLM Provider Factory (it handles model selection)
-        self.llm_factory = LLMProviderFactory(provider, model_name=model, temperature=temperature)
+        self.llm_factory = LLMProviderFactory(provider, model_name=model, temperature=temperature, api_key=api_key)
         self.llm = self.llm_factory.llm
         self.parser = JsonOutputParser(pydantic_object=QAList)
 
@@ -169,12 +169,6 @@ class AgentGenerator:
                     logger.info(f"Rate limiting enabled: Sleeping for {delay:.2f}s before request.")
                     await asyncio.sleep(delay)
 
-                # Note: If we use asyncio.gather, all sleeps happen concurrently if spawned at once.
-                # To strictly rate limit, we should await sequentially or use a semaphore/token bucket.
-                # Here we await sequentially inside the loop if rate limiting is high,
-                # but better to sequentialize the calls.
-
-                # If rate_limit > 0, we do sequential processing.
                 if rate_limit > 0:
                     result = await self._invoke_llm(chunk_instruction, chunk, current_batch)
                     if result:
@@ -237,10 +231,6 @@ class AgentGenerator:
         """
         Agentic generation.
         """
-        # ... (same logic as before, just kept for brevity) ...
-        # Ideally, we should apply rate limiting to agent tools too, but harder to control.
-        # We can wrap the LLM call in a rate limiter.
-
         logger.info("Starting Agentic Generation Mode (using create_agent)")
 
         tools = []
@@ -341,4 +331,4 @@ class AgentGenerator:
 
         except Exception as e:
             logger.error(f"Agent execution failed: {e}. Falling back to pipeline.")
-            return await self._generate_pipeline(prompt, context, examples, count) # Fallback uses defaults
+            return await self._generate_pipeline(prompt, context, examples, count)

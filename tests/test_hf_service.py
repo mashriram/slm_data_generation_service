@@ -13,7 +13,8 @@ def test_push_dataset():
 
         assert "Successfully pushed" in result
         mock_login.assert_called_with(token="token", add_to_git_credential=False)
-        mock_ds_instance.push_to_hub.assert_called_with("user/repo", private=False)
+        # Expect split='train' default
+        mock_ds_instance.push_to_hub.assert_called_with(repo_id="user/repo", private=False, split="train")
 
 def test_modify_dataset_append():
     new_data = [{"q": "new"}]
@@ -24,8 +25,20 @@ def test_modify_dataset_append():
         mock_combined = MagicMock()
         mock_concat.return_value = mock_combined
 
-        result = HuggingFaceService.modify_dataset("user/repo", new_data, "token", operation="append_rows")
+        # Use keyword args to be safe
+        result = HuggingFaceService.modify_dataset(
+            repo_id="user/repo",
+            token="token",
+            new_data=new_data,
+            operation="append_rows"
+        )
 
         assert "Successfully modified" in result
         mock_concat.assert_called()
-        mock_combined.push_to_hub.assert_called_with("user/repo")
+        # Verify call to push_to_hub on combined dataset
+        # It calls combined.push_to_hub(repo_id=..., config_name=..., split=...)
+        # We need to check args roughly
+        mock_combined.push_to_hub.assert_called()
+        args, kwargs = mock_combined.push_to_hub.call_args
+        assert kwargs["repo_id"] == "user/repo"
+        assert kwargs["split"] == "train"
