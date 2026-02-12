@@ -1,10 +1,12 @@
 import asyncio
 import logging
+import pytest
 from fastapi.testclient import TestClient
 from app.main import app
 
 client = TestClient(app)
 
+@pytest.mark.asyncio
 async def test_ws():
     with client.websocket_connect("/ws/logs") as websocket:
         # Trigger a log message by hitting the health check endpoint

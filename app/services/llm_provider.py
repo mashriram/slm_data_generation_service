@@ -1,15 +1,15 @@
 import logging
-from typing import Optional
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import JsonOutputParser
-from pydantic import BaseModel, Field
-from langchain_groq import ChatGroq
-from langchain_openai import ChatOpenAI
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_huggingface import HuggingFacePipeline
-from typing import List, Type
+from typing import List, Optional
 
-from app.core.config import get_settings, LLMProviderEnum
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
+from langchain_huggingface import HuggingFacePipeline
+from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, Field, SecretStr
+
+from app.core.config import LLMProviderEnum, get_settings
 from app.utils.exceptions import LLMProviderError
 
 logger = logging.getLogger(__name__)
@@ -30,7 +30,12 @@ class QAList(BaseModel):
 class LLMProviderFactory:
     """Factory to create and configure LLM chains."""
 
-    def __init__(self, provider: LLMProviderEnum, model_name: Optional[str] = None, temperature: float = 0.7, api_key: Optional[str] = None):
+    def __init__(
+        self,
+        provider: LLMProviderEnum,
+        model_name: Optional[str] = None,
+        temperature: float = 0.7,
+    ):
         self.settings = get_settings()
         self.provider = provider
         self.model_name = model_name
@@ -42,7 +47,9 @@ class LLMProviderFactory:
         self.prompt = self._create_prompt()
         self.llm = self._get_llm()
         self.chain = self.prompt | self.llm | self.parser
-        logger.info(f"Initialized LLM provider: {self.provider} (Model: {self.model_name or 'default'})")
+        logger.info(
+            f"Initialized LLM provider: {self.provider} (Model: {self.model_name or 'default'})"
+        )
 
     def _create_prompt(self):
         """Creates the prompt template for QA generation."""
@@ -94,7 +101,7 @@ class LLMProviderFactory:
                     raise LLMProviderError("GOOGLE_API_KEY is not set.")
                 return ChatGoogleGenerativeAI(
                     temperature=self.temperature,
-                    google_api_key=key,
+                    api_key=SecretStr(self.settings.GOOGLE_API_KEY),
                     model=self.model_name or self.settings.GOOGLE_MODEL_NAME,
                 )
 

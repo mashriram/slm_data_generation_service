@@ -1,6 +1,7 @@
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 from gradio_app import generate_data
+
 
 @patch("requests.post")
 def test_generate_data(mock_post):
@@ -8,7 +9,7 @@ def test_generate_data(mock_post):
     mock_response.status_code = 200
     mock_response.json.return_value = {
         "success": True,
-        "data": [{"question": "Q1", "answer": "A1"}]
+        "data": [{"question": "Q1", "answer": "A1"}],
     }
     mock_post.return_value = mock_response
 
@@ -27,7 +28,14 @@ def test_generate_data(mock_post):
             temperature=0.7,
             count=5,
             agentic=False,
-            mcp_servers=None
+            mcp_servers=None,
+            use_rag=False,
+            conserve_tokens=False,
+            rate_limit=None,
+            hf_repo=None,
+            hf_token=None,
+            hf_private=False,
+            hf_append=False,
         )
 
     assert "Q1" in df.to_string()
@@ -37,7 +45,8 @@ def test_generate_data(mock_post):
     # Verify payload
     args, kwargs = mock_post.call_args
     assert kwargs["data"]["provider"] == "groq"
-    assert len(kwargs["files"]) == 3 # 2 files + 1 demo file
+    assert len(kwargs["files"]) == 3  # 2 files + 1 demo file
+
 
 if __name__ == "__main__":
     test_generate_data()

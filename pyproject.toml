@@ -33,6 +33,10 @@ dependencies = [
     "datasets",
     "rich",
     "typer",
+    "pytest>=9.0.2",
+    "langchain-chroma>=1.1.0",
+    "pytest-asyncio>=1.3.0",
+    "anyio>=4.10.0",
 ]
 
 [project.optional-dependencies]
