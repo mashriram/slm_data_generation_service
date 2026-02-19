@@ -3294,6 +3294,7 @@ dependencies = [
     { name = "transformers" },
     { name = "typer" },
     { name = "uvicorn", extra = ["standard"] },
+    { name = "vllm-rs" },
     { name = "websockets" },
 ]
 
@@ -3337,6 +3338,7 @@ requires-dist = [
     { name = "transformers" },
     { name = "typer" },
     { name = "uvicorn", extras = ["standard"] },
+    { name = "vllm-rs", specifier = ">=0.8.12" },
     { name = "websockets" },
 ]
 provides-extras = ["test"]
@@ -3659,6 +3661,14 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/d2/19/f5b78616566ea68edd42aacaf645adbf71fbd83fc52281fba555dc27e3f1/uvloop-0.21.0-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f3df876acd7ec037a3d005b3ab85a7e4110422e4d9c1571d4fc89b0fc41b6816", size = 4701068, upload-time = "2024-10-14T23:38:06.385Z" },
     { url = "https://files.pythonhosted.org/packages/47/57/66f061ee118f413cd22a656de622925097170b9380b30091b78ea0c6ea75/uvloop-0.21.0-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:bd53ecc9a0f3d87ab847503c2e1552b690362e005ab54e8a48ba97da3924c0dc", size = 4454428, upload-time = "2024-10-14T23:38:08.416Z" },
     { url = "https://files.pythonhosted.org/packages/63/9a/0962b05b308494e3202d3f794a6e85abe471fe3cafdbcf95c2e8c713aabd/uvloop-0.21.0-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:a5c39f217ab3c663dc699c04cbd50c13813e31d917642d459fdcec07555cc553", size = 4660018, upload-time = "2024-10-14T23:38:10.888Z" },
+]
+
+[[package]]
+name = "vllm-rs"
+version = "0.8.12"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6a/36/d9ef5efa6a7ca1da10eba4a97982ef57a5cc43a70052a44f5de5af4a935d/vllm_rs-0.8.12-cp38-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:680ed911b5241848c2817c50ad367567d7dd923f12211c489d5af1ad5a9f0312", size = 86817264, upload-time = "2026-02-02T02:59:04.963Z" },
 ]
 
 [[package]]

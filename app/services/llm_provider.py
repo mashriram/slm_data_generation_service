@@ -5,11 +5,12 @@ from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
-from langchain_huggingface import HuggingFacePipeline
+from langchain_huggingface import HuggingFacePipeline, HuggingFaceEndpoint
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field, SecretStr
 
 from app.core.config import LLMProviderEnum, get_settings
+from app.core.token_manager import TokenManager
 from app.utils.exceptions import LLMProviderError
 
 logger = logging.getLogger(__name__)
@@ -35,12 +36,19 @@ class LLMProviderFactory:
         provider: LLMProviderEnum,
         model_name: Optional[str] = None,
         temperature: float = 0.7,
+        api_key: Optional[str] = None,
     ):
         self.settings = get_settings()
         self.provider = provider
         self.model_name = model_name
         self.temperature = temperature
-        self.api_key = api_key
+        
+        # Initialize TokenManager
+        self.token_manager = TokenManager()
+        
+        # Use provided key or fetch from TokenManager
+        self.api_key = api_key or self.token_manager.get_token(self.provider)
+        
         self.parser = JsonOutputParser(pydantic_object=QAList)
         # Note: self.chain is primarily for backward compatibility or simple use cases.
         # AgentGenerator might use self.llm directly.
@@ -101,17 +109,26 @@ class LLMProviderFactory:
                     raise LLMProviderError("GOOGLE_API_KEY is not set.")
                 return ChatGoogleGenerativeAI(
                     temperature=self.temperature,
-                    api_key=SecretStr(self.settings.GOOGLE_API_KEY),
+                    api_key=SecretStr(key),
                     model=self.model_name or self.settings.GOOGLE_MODEL_NAME,
                 )
 
             elif self.provider == "huggingface":
-                # Note: This runs the model locally. Requires `transformers` and `torch`.
-                # API Token might be used for login if needed, but Pipeline usually loads locally.
                 return HuggingFacePipeline.from_model_id(
                     model_id=self.model_name or self.settings.HUGGINGFACE_MODEL_NAME,
                     task="text2text-generation",
                     pipeline_kwargs={"max_new_tokens": 512},
+                )
+            
+            elif self.provider == "huggingface-inference":
+                key = self.api_key
+                if not key:
+                     raise LLMProviderError("HF_TOKEN is not set for Inference API.")
+                return HuggingFaceEndpoint(
+                    repo_id=self.model_name or "mistralai/Mistral-7B-Instruct-v0.3",
+                    temperature=self.temperature,
+                    huggingfacehub_api_token=key,
+                    task="text-generation"
                 )
 
             else:

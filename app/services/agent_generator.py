@@ -61,12 +61,13 @@ class AgentGenerator:
         mcp_servers: Optional[List[str]] = None,
         use_rag: bool = False,
         conserve_tokens: bool = False,
-        rate_limit: int = 0
+        rate_limit: int = 0,
+        deduplicate: bool = True
     ) -> List[Dict[str, str]]:
         """
         Main entry point for generation.
         """
-        logger.info(f"Starting generation. Agentic: {agentic}, RAG: {use_rag}, Count: {count}, Conserve: {conserve_tokens}, Rate: {rate_limit}")
+        logger.info(f"Starting generation. Agentic: {agentic}, RAG: {use_rag}, Count: {count}, Conserve: {conserve_tokens}, Rate: {rate_limit}, Dedup: {deduplicate}")
 
         # 1. Process Inputs
         context_text = ""
@@ -107,10 +108,20 @@ class AgentGenerator:
                 context_text = context_text[:MAX_CONTEXT_CHARS] + "\n...[truncated for token conservation]..."
 
         # 2. Execute Generation Strategy
+        results = []
         if agentic:
-            return await self._generate_agentic(prompt, context_text, documents, few_shot_examples, count, mcp_servers, use_rag)
+            results = await self._generate_agentic(prompt, context_text, documents, few_shot_examples, count, mcp_servers, use_rag)
         else:
-            return await self._generate_pipeline(prompt, context_text, few_shot_examples, count, rate_limit)
+            results = await self._generate_pipeline(prompt, context_text, few_shot_examples, count, rate_limit)
+        
+        # 3. Quality Control (Deduplication)
+        if deduplicate and results:
+            from app.services.quality_control import QualityController
+            qc = QualityController()
+            # Deduplicate based on 'question' and 'answer'
+            results = qc.deduplicate(results, keys=["question", "answer"])
+            
+        return results
 
     async def _generate_pipeline(
         self,

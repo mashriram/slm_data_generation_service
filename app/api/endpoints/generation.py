@@ -6,6 +6,7 @@ from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException, Q
 from pydantic import BaseModel, Field
 
 from app.core.config import get_settings, LLMProviderEnum
+from app.core.token_manager import TokenManager
 from app.services.agent_generator import AgentGenerator
 from app.services.hf_service import HuggingFaceService
 from app.services.generative_modifier import GenerativeDatasetModifier
@@ -163,7 +164,8 @@ async def modify_dataset(request: DatasetModifyRequest):
                     split=request.split,
                     hf_token=request.token,
                     new_column_name=request.new_column_name,
-                    instruction=request.instruction
+                    instruction=request.instruction,
+                    limit=request.num_rows if request.num_rows > 0 and request.num_rows < 1000 else None
                 )
 
                 # Apply modification
@@ -174,7 +176,8 @@ async def modify_dataset(request: DatasetModifyRequest):
                     config_name=request.config_name,
                     split=request.split,
                     new_column_name=request.new_column_name,
-                    new_column_data=new_values
+                    new_column_data=new_values,
+                    limit=request.num_rows if request.num_rows > 0 and request.num_rows < 1000 else None
                 )
                 return {"success": True, "message": msg + f" (Generated {len(new_values)} values)"}
 
@@ -226,12 +229,29 @@ def get_dataset_info(repo_id: str, token: Optional[str] = None):
 
 @router.get("/models", summary="List Available Models", tags=["Info"])
 def list_models():
+    tm = TokenManager()
+    configured_providers = tm.list_providers()
+    
+    # Always include 'huggingface' (local) as it doesn't strictly need a token for some models
+    # But for consistency, we might want to check. 
+    # Current logic: return all supported providers, but maybe mark which ones are configured?
+    # The UI uses this list to populate dropdown.
+    # Let's return all supported, but maybe add a field "configured": bool
+    
+    # Creating a list of all supported providers
+    supported = ["groq", "openai", "google", "huggingface", "huggingface-inference"]
+    
+    # Base defaults
+    defaults = {
+        "groq": settings.GROQ_MODEL_NAME,
+        "openai": settings.OPENAI_MODEL_NAME,
+        "google": settings.GOOGLE_MODEL_NAME,
+        "huggingface": settings.HUGGINGFACE_MODEL_NAME,
+        "huggingface-inference": "mistralai/Mistral-7B-Instruct-v0.3"
+    }
+    
     return {
-        "providers": ["groq", "openai", "google", "huggingface"],
-        "defaults": {
-            "groq": settings.GROQ_MODEL_NAME,
-            "openai": settings.OPENAI_MODEL_NAME,
-            "google": settings.GOOGLE_MODEL_NAME,
-            "huggingface": settings.HUGGINGFACE_MODEL_NAME,
-        }
+        "providers": supported,
+        "configured": configured_providers,
+        "defaults": defaults
     }

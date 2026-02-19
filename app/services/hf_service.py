@@ -73,30 +73,42 @@ class HuggingFaceService:
                 try:
                     # Load existing with specific config/split
                     existing_dataset = load_dataset(repo_id, name=config_name, split=split)
-                    # Align features if necessary or just concatenate
-                    combined_dataset = concatenate_datasets([existing_dataset, new_dataset])
+                    
+                    # Align features: Cast new dataset features to match existing features
+                    if existing_dataset.features:
+                         try:
+                             new_dataset = new_dataset.cast(existing_dataset.features)
+                         except Exception as cast_err:
+                             logger.warning(f"Feature casting failed: {cast_err}. Attempting to proceed without casting.")
 
-                    # Pushing combined dataset to a specific config/split is tricky via push_to_hub
-                    # because push_to_hub typically updates the main parquet files.
-                    # We usually specify `config_name` in push_to_hub arguments if supported,
-                    # but standard usage is `ds.push_to_hub(repo_id, config_name=...)`.
+                    combined_dataset = concatenate_datasets([existing_dataset, new_dataset])
 
                     push_args = {"repo_id": repo_id, "private": private}
                     if config_name and config_name != "default":
                         push_args["config_name"] = config_name
                     if split:
-                        push_args["split"] = split
+                         push_args["split"] = split
 
                     combined_dataset.push_to_hub(**push_args)
                 except Exception as e:
-                    logger.warning(f"Could not load existing dataset {repo_id} to append. Creating new. Error: {e}")
-                    # Create new
-                    push_args = {"repo_id": repo_id, "private": private}
-                    if config_name and config_name != "default":
-                        push_args["config_name"] = config_name
-                    if split:
-                        push_args["split"] = split
-                    new_dataset.push_to_hub(**push_args)
+                    logger.warning(f"Could not load existing dataset {repo_id} to append or merge failed. Creating new/Overwriting if forced. Error: {e}")
+                    # If append failed (e.g. dataset doesn't exist), we treat it as new push?
+                    # Or should we fail?
+                    # If the error is regarding loading, we can assume it doesn't exist and create it.
+                    # But if error is regarding merge, we might lose data if we overwrite.
+                    # Current logic falls back to pushing new_dataset only, which effectively overwrites/creates new.
+                    # This might be dangerous if 'append' was intended.
+                    # Let's check if it was a loading error.
+                    if "FileNotFound" in str(e) or "404" in str(e):
+                        # Dataset likely doesn't exist, so create it
+                        push_args = {"repo_id": repo_id, "private": private}
+                        if config_name and config_name != "default":
+                             push_args["config_name"] = config_name
+                        if split:
+                             push_args["split"] = split
+                        new_dataset.push_to_hub(**push_args)
+                    else:
+                        raise e # Re-raise if it was a merge error to prevent data loss
             else:
                 push_args = {"repo_id": repo_id, "private": private}
                 if config_name and config_name != "default":
@@ -119,7 +131,8 @@ class HuggingFaceService:
         config_name: Optional[str] = None,
         split: str = "train",
         new_column_name: Optional[str] = None,
-        new_column_data: Optional[List[Any]] = None
+        new_column_data: Optional[List[Any]] = None,
+        limit: Optional[int] = None
     ) -> str:
         """
         Modifies an existing HF dataset.
@@ -128,11 +141,19 @@ class HuggingFaceService:
         - 'add_column': Adds a new column (requires `new_column_name` and `new_column_data`).
         """
         try:
-            logger.info(f"Modifying dataset {repo_id} config={config_name} split={split} op={operation}")
+            logger.info(f"Modifying dataset {repo_id} config={config_name} split={split} op={operation} limit={limit}")
             login(token=token, add_to_git_credential=False)
 
             # Load existing
-            ds = load_dataset(repo_id, name=config_name, split=split)
+            if limit:
+                # Use streaming to avoid downloading full dataset
+                logger.info(f"Loading dataset with streaming=True and limit={limit}")
+                iterable_ds = load_dataset(repo_id, name=config_name, split=split, streaming=True)
+                sliced_iterable = iterable_ds.take(limit)
+                data = list(sliced_iterable)
+                ds = Dataset.from_list(data, features=iterable_ds.features)
+            else:
+                ds = load_dataset(repo_id, name=config_name, split=split)
 
             if operation == "append_rows":
                 if not new_data:
@@ -169,5 +190,41 @@ class HuggingFaceService:
 
             return f"Successfully modified {repo_id}"
         except Exception as e:
+            # Check for permission error (403)
+            error_str = str(e)
+            if "403" in error_str or "Forbidden" in error_str or "Repository not found" in error_str:
+                logger.warning(f"Permission denied or repo not found for {repo_id}. Attempting to clone and modify...")
+                try:
+                    api = HfApi(token=token)
+                    user_info = api.whoami()
+                    username = user_info["name"]
+                    
+                    original_name = repo_id.split("/")[-1]
+                    new_repo_id = f"{username}/{original_name}"
+                    
+                    logger.info(f"Cloning {repo_id} to {new_repo_id}")
+                    
+                    # Check if already exists or create
+                    try:
+                        api.create_repo(repo_id=new_repo_id, repo_type="dataset", exist_ok=True, private=False)
+                        logger.info(f"Target repo {new_repo_id} ready.")
+                    except Exception as create_error:
+                        logger.error(f"Failed to create repo {new_repo_id}: {create_error}")
+                        raise create_error
+                    
+                    # Push the ALREADY MODIFIED dataset to the new repo
+                    # We assume 'ds' is available and modified because 403 usually happens at push_to_hub
+                    if 'ds' in locals() and ds is not None:
+                        ds.push_to_hub(new_repo_id, config_name=config_name, split=split)
+                        return f"Permission denied on original. Cloned to {new_repo_id} and pushed modification."
+                    else:
+                        # If ds is not available (e.g. 403 during load), we can't do much without re-loading/cloning manually
+                        # But for public datasets, load succeeds.
+                        raise e
+                    
+                except Exception as clone_error:
+                    logger.error(f"Clone and retry failed: {clone_error}")
+                    raise e # Raise original error if clone fails? Or clone error?
+            
             logger.error(f"Failed to modify dataset: {e}")
             raise e

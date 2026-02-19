@@ -25,6 +25,7 @@ def test_generate_data(mock_post):
             demo_file=demo_file,
             provider="groq",
             model="llama3",
+            api_key="test-key",
             temperature=0.7,
             count=5,
             agentic=False,
@@ -36,6 +37,8 @@ def test_generate_data(mock_post):
             hf_token=None,
             hf_private=False,
             hf_append=False,
+            hf_config="default",
+            hf_split="train",
         )
 
     assert "Q1" in df.to_string()
