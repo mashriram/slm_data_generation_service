@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     HUGGINGFACE_API_TOKEN: str | None = None
 
     # Default model names for each provider
-    GROQ_MODEL_NAME: str = "llama3-8b-8192"
+    GROQ_MODEL_NAME: str = "llama-3.3-70b-versatile"
     OPENAI_MODEL_NAME: str = "gpt-4o-mini"
     GOOGLE_MODEL_NAME: str = "gemini-1.5-flash-latest"
     HUGGINGFACE_MODEL_NAME: str = "google/flan-t5-large"
