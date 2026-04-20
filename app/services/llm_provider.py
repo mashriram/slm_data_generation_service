@@ -131,6 +131,17 @@ class LLMProviderFactory:
                     task="text-generation"
                 )
 
+            elif self.provider == "openrouter":
+                key = self.api_key or self.settings.OPENROUTER_API_KEY
+                if not key:
+                    raise LLMProviderError("OPENROUTER_API_KEY is not set.")
+                return ChatOpenAI(
+                    temperature=self.temperature,
+                    openai_api_key=key,
+                    base_url="https://openrouter.ai/api/v1",
+                    model=self.model_name or self.settings.OPENROUTER_MODEL_NAME,
+                )
+
             else:
                 raise LLMProviderError(f"Unsupported LLM provider: {self.provider}")
         except ImportError as e:

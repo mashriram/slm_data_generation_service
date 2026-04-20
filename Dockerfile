@@ -1,4 +1,3 @@
-# Dockerfile
 FROM python:3.10-slim
 
 WORKDIR /app
@@ -6,17 +5,19 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
 
-# For LangChain community packages that may have C++ dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:0.5.21 /uv /uvx /bin/
 
-COPY ./app /app/app
+# Copy dependencies definitions
+COPY pyproject.toml uv.lock ./
 
-# Port the service will run on
+# Install dependencies using uv into system environment
+RUN uv sync --frozen --no-cache
+
+COPY . /app
+
 EXPOSE 8001
 
-# Run with more workers for production
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "4"]
+CMD ["/app/.venv/bin/uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "4"]

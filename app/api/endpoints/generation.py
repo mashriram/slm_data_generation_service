@@ -73,7 +73,8 @@ async def generate_data(
         generator = AgentGenerator(
             provider=provider,
             model=model,
-            temperature=temperature
+            temperature=temperature,
+            api_key=api_key
         )
         # Hack: if api_key provided, set it in factory (requires update to AgentGenerator/Factory)
         # This will be handled in Step 3. For now passing it if I update AgentGenerator.
@@ -239,7 +240,7 @@ def list_models():
     # Let's return all supported, but maybe add a field "configured": bool
     
     # Creating a list of all supported providers
-    supported = ["groq", "openai", "google", "huggingface", "huggingface-inference"]
+    supported = ["groq", "openai", "google", "huggingface", "huggingface-inference", "openrouter"]
     
     # Base defaults
     defaults = {
@@ -247,7 +248,8 @@ def list_models():
         "openai": settings.OPENAI_MODEL_NAME,
         "google": settings.GOOGLE_MODEL_NAME,
         "huggingface": settings.HUGGINGFACE_MODEL_NAME,
-        "huggingface-inference": "mistralai/Mistral-7B-Instruct-v0.3"
+        "huggingface-inference": "mistralai/Mistral-7B-Instruct-v0.3",
+        "openrouter": settings.OPENROUTER_MODEL_NAME
     }
     
     return {

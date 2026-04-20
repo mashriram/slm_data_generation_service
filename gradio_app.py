@@ -413,7 +413,7 @@ with gr.Blocks(title="SLM Data Generator") as demo:
             with gr.Row():
                 with gr.Column():
                     settings_provider = gr.Dropdown(
-                        choices=["openai", "groq", "google", "huggingface", "huggingface-inference"], 
+                        choices=["openai", "groq", "google", "huggingface", "huggingface-inference", "openrouter"], 
                         label="Provider",
                         value="openai"
                     )

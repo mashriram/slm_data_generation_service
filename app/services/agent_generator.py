@@ -227,7 +227,7 @@ class AgentGenerator:
 
         except Exception as e:
             logger.error(f"LLM generation failed: {e}")
-            return []
+            raise DataGenerationError(f"LLM generation failed: {e}")
 
     async def _generate_agentic(
         self,
@@ -333,11 +333,15 @@ class AgentGenerator:
                 parsed = self.parser.parse(output_text)
                 if parsed and "qa_pairs" in parsed:
                      return [dict(pair) for pair in parsed["qa_pairs"]]
+                logger.warning("qa_pairs not found in parsed JSON.")
                 return []
             except Exception as parse_error:
+                logger.error(f"Parser failed: {parse_error}. Output text: {output_text}")
                 json_match = re.search(r"\{.*\}", output_text, re.DOTALL)
                 if json_match:
+                     logger.info("Found JSON block via regex fallback.")
                      return json.loads(json_match.group(0)).get("qa_pairs", [])
+                logger.warning("No JSON block matched.")
                 return []
 
         except Exception as e:

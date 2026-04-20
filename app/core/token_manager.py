@@ -66,7 +66,8 @@ class TokenManager:
             "openai": "OPENAI_API_KEY",
             "groq": "GROQ_API_KEY",
             "google": "GOOGLE_API_KEY",
-            "huggingface": "HF_TOKEN"
+            "huggingface": "HF_TOKEN",
+            "openrouter": "OPENROUTER_API_KEY"
         }
         env_var = env_var_map.get(provider.lower())
         if env_var:
@@ -94,7 +95,8 @@ class TokenManager:
             "openai": "OPENAI_API_KEY",
             "groq": "GROQ_API_KEY",
             "google": "GOOGLE_API_KEY",
-            "huggingface": "HF_TOKEN"
+            "huggingface": "HF_TOKEN",
+            "openrouter": "OPENROUTER_API_KEY"
         }
         for prov, var in env_map.items():
             if os.getenv(var):
