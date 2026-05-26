@@ -42,6 +42,8 @@ async def generate_data(
     conserve_tokens: bool = Form(False, description="Optimize context to conserve tokens."),
     rate_limit: int = Form(0, description="Rate limit (requests per minute). 0 for unlimited."),
     mcp_servers: Optional[str] = Form(None, description="JSON string list of MCP server URLs (optional)."),
+    task_type: str = Form("sft", description="Type of dataset task (sft, dpo, grpo, rlvr)"),
+    use_nemo: bool = Form(False, description="Use NVIDIA NeMo SDG simulation Critique & Refine steps"),
     # HF Options
     hf_repo_id: Optional[str] = Form(None, description="Hugging Face Repo ID to push to (e.g., 'username/dataset')."),
     hf_token: Optional[str] = Form(None, description="Hugging Face Write Token."),
@@ -53,7 +55,7 @@ async def generate_data(
     """
     Unified endpoint to generate synthetic data.
     """
-    logger.info(f"Received generation request. Provider: {provider}, Rate Limit: {rate_limit}")
+    logger.info(f"Received generation request. Provider: {provider}, Task: {task_type}, NeMo: {use_nemo}")
 
     try:
         # Parse MCP servers if provided
@@ -62,13 +64,9 @@ async def generate_data(
             try:
                 parsed_mcp_servers = json.loads(mcp_servers)
                 if not isinstance(parsed_mcp_servers, list):
-                    raise ValueError("MCP servers must be a list of strings.")
+                     raise ValueError("MCP servers must be a list of strings.")
             except Exception as e:
                 logger.warning(f"Failed to parse MCP servers: {e}")
-
-        # Inject API Key into settings roughly (or pass to generator)
-        # Note: Generator uses LLMProviderFactory which currently reads from settings.
-        # Ideally we pass api_key to Generator.
 
         generator = AgentGenerator(
             provider=provider,
@@ -76,8 +74,6 @@ async def generate_data(
             temperature=temperature,
             api_key=api_key
         )
-        # Hack: if api_key provided, set it in factory (requires update to AgentGenerator/Factory)
-        # This will be handled in Step 3. For now passing it if I update AgentGenerator.
 
         files = files or []
 
@@ -90,7 +86,9 @@ async def generate_data(
             mcp_servers=parsed_mcp_servers,
             use_rag=use_rag,
             conserve_tokens=conserve_tokens,
-            rate_limit=rate_limit
+            rate_limit=rate_limit,
+            task_type=task_type,
+            use_nemo=use_nemo
         )
 
         message = "Data generated successfully."
