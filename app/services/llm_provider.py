@@ -1,14 +1,16 @@
 import logging
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import JsonOutputParser
-from langchain_core.pydantic_v1 import BaseModel, Field
-from langchain_groq import ChatGroq
-from langchain_openai import ChatOpenAI
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_huggingface import HuggingFacePipeline
-from typing import List, Type
+from typing import List, Optional
 
-from app.core.config import get_settings, LLMProviderEnum
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
+from langchain_huggingface import HuggingFacePipeline, HuggingFaceEndpoint
+from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, Field, SecretStr
+
+from app.core.config import LLMProviderEnum, get_settings
+from app.core.token_manager import TokenManager
 from app.utils.exceptions import LLMProviderError
 
 logger = logging.getLogger(__name__)
@@ -29,14 +31,33 @@ class QAList(BaseModel):
 class LLMProviderFactory:
     """Factory to create and configure LLM chains."""
 
-    def __init__(self, provider: LLMProviderEnum):
+    def __init__(
+        self,
+        provider: LLMProviderEnum,
+        model_name: Optional[str] = None,
+        temperature: float = 0.7,
+        api_key: Optional[str] = None,
+    ):
         self.settings = get_settings()
         self.provider = provider
+        self.model_name = model_name
+        self.temperature = temperature
+        
+        # Initialize TokenManager
+        self.token_manager = TokenManager()
+        
+        # Use provided key or fetch from TokenManager
+        self.api_key = api_key or self.token_manager.get_token(self.provider)
+        
         self.parser = JsonOutputParser(pydantic_object=QAList)
+        # Note: self.chain is primarily for backward compatibility or simple use cases.
+        # AgentGenerator might use self.llm directly.
         self.prompt = self._create_prompt()
         self.llm = self._get_llm()
         self.chain = self.prompt | self.llm | self.parser
-        logger.info(f"Initialized LLM provider: {self.provider}")
+        logger.info(
+            f"Initialized LLM provider: {self.provider} (Model: {self.model_name or 'default'})"
+        )
 
     def _create_prompt(self):
         """Creates the prompt template for QA generation."""
@@ -63,38 +84,62 @@ class LLMProviderFactory:
         """Selects and configures the appropriate LLM based on the provider."""
         try:
             if self.provider == "groq":
-                if not self.settings.GROQ_API_KEY:
+                key = self.api_key or self.settings.GROQ_API_KEY
+                if not key:
                     raise LLMProviderError("GROQ_API_KEY is not set.")
                 return ChatGroq(
-                    temperature=0.7,
-                    groq_api_key=self.settings.GROQ_API_KEY,
-                    model_name=self.settings.GROQ_MODEL_NAME,
+                    temperature=self.temperature,
+                    groq_api_key=key,
+                    model_name=self.model_name or self.settings.GROQ_MODEL_NAME,
                 )
 
             elif self.provider == "openai":
-                if not self.settings.OPENAI_API_KEY:
+                key = self.api_key or self.settings.OPENAI_API_KEY
+                if not key:
                     raise LLMProviderError("OPENAI_API_KEY is not set.")
                 return ChatOpenAI(
-                    temperature=0.7,
-                    openai_api_key=self.settings.OPENAI_API_KEY,
-                    model=self.settings.OPENAI_MODEL_NAME,
+                    temperature=self.temperature,
+                    openai_api_key=key,
+                    model=self.model_name or self.settings.OPENAI_MODEL_NAME,
                 )
 
             elif self.provider == "google":
-                if not self.settings.GOOGLE_API_KEY:
+                key = self.api_key or self.settings.GOOGLE_API_KEY
+                if not key:
                     raise LLMProviderError("GOOGLE_API_KEY is not set.")
                 return ChatGoogleGenerativeAI(
-                    temperature=0.7,
-                    google_api_key=self.settings.GOOGLE_API_KEY,
-                    model=self.settings.GOOGLE_MODEL_NAME,
+                    temperature=self.temperature,
+                    api_key=SecretStr(key),
+                    model=self.model_name or self.settings.GOOGLE_MODEL_NAME,
                 )
 
             elif self.provider == "huggingface":
-                # Note: This runs the model locally. Requires `transformers` and `torch`.
                 return HuggingFacePipeline.from_model_id(
-                    model_id=self.settings.HUGGINGFACE_MODEL_NAME,
+                    model_id=self.model_name or self.settings.HUGGINGFACE_MODEL_NAME,
                     task="text2text-generation",
                     pipeline_kwargs={"max_new_tokens": 512},
+                )
+            
+            elif self.provider == "huggingface-inference":
+                key = self.api_key
+                if not key:
+                     raise LLMProviderError("HF_TOKEN is not set for Inference API.")
+                return HuggingFaceEndpoint(
+                    repo_id=self.model_name or "mistralai/Mistral-7B-Instruct-v0.3",
+                    temperature=self.temperature,
+                    huggingfacehub_api_token=key,
+                    task="text-generation"
+                )
+
+            elif self.provider == "openrouter":
+                key = self.api_key or self.settings.OPENROUTER_API_KEY
+                if not key:
+                    raise LLMProviderError("OPENROUTER_API_KEY is not set.")
+                return ChatOpenAI(
+                    temperature=self.temperature,
+                    openai_api_key=key,
+                    base_url="https://openrouter.ai/api/v1",
+                    model=self.model_name or self.settings.OPENROUTER_MODEL_NAME,
                 )
 
             else:

@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic_settings import BaseSettings
 
 # Supported LLM Providers
-LLMProviderEnum = Literal["groq", "openai", "google", "huggingface"]
+LLMProviderEnum = Literal["groq", "openai", "google", "huggingface", "openrouter"]
 
 class Settings(BaseSettings):
     """
@@ -20,12 +20,14 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str | None = None
     GOOGLE_API_KEY: str | None = None
     HUGGINGFACE_API_TOKEN: str | None = None
+    OPENROUTER_API_KEY: str | None = None
 
     # Default model names for each provider
-    GROQ_MODEL_NAME: str = "llama3-8b-8192"
+    GROQ_MODEL_NAME: str = "llama-3.3-70b-versatile"
     OPENAI_MODEL_NAME: str = "gpt-4o-mini"
     GOOGLE_MODEL_NAME: str = "gemini-1.5-flash-latest"
     HUGGINGFACE_MODEL_NAME: str = "google/flan-t5-large"
+    OPENROUTER_MODEL_NAME: str = "google/gemini-2.5-pro"
 
     # Generation settings
     TARGET_QA_PAIRS: int = 10000
